@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.2.3
+    container_name: filebeat
+    restart: on-failure
+    depends_on:
+      - mysql
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - ./data/mysql/mysql/mysql-slow.log:/var/log/mysql/mysql-slow.log
+      - filebeat_data:/usr/share/filebeat/data/
+
+  mysql:
+    image: mysql:8
+    restart: always
+    container_name: mysql
+    env_file: configuration.env
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./mysql:/etc/mysql/conf.d
+    ports:
+      - 3306:3306
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.2.1
+    container_name: elastic
+    tty: true
+    privileged: true
+    stdin_open: true
+    environment:
+      - node.name=elasticsearch
+      - cluster.name=log-cluster
+      - discovery.seed_hosts=elasticsearch
+      - discovery.type=single-node
+      - cluster.routing.allocation.enable=all
+      - ELASTIC_PASSWORD=passwd
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.2.1
+    container_name: logstash
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro,Z
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro,Z
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    environment:
+      LS_JAVA_OPTS: -Xms256m -Xmx256m
+      LOGSTASH_INTERNAL_PASSWORD: passwd
+    depends_on:
+      - elasticsearch
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.2.1
+    container_name: kibana
+    volumes:
+      - kibana_data:/usr/share/kibana/data
+    ports:
+      - 5601:5601
+    environment:
+      - SERVERNAME=kibana
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=passwd
+    depends_on:
+      - elasticsearch
+
+volumes:
+  es_data: {}
+  kibana_data: {}
+  filebeat_data: {}
